@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     cache_ttl_historical: int = 3600
     app_env: str = "development"
     datadog_api_key: str = ""
+    celery_broker_url: str = "redis://redis:6379/1"
+    celery_result_backend: str = "redis://redis:6379/2"
 
 
 @lru_cache
