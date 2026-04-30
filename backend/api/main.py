@@ -4,6 +4,7 @@ init_datadog()
 import structlog
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
 from contextlib import asynccontextmanager
 from core.config import get_settings
 
@@ -34,6 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(RateLimitMiddleware)
 
 auth_router: APIRouter = APIRouter()
 prices_router: APIRouter = APIRouter()
