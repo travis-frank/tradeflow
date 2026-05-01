@@ -33,7 +33,12 @@ def upgrade() -> None:
         sa.Column("interval", sa.String(length=10), nullable=False),
         sa.PrimaryKeyConstraint("time", "ticker"),
     )
-    op.create_index("ix_stock_prices_ticker_time", "stock_prices", ["ticker", "time"], unique=False)
+    op.create_index(
+        "ix_stock_prices_ticker_time_desc",
+        "stock_prices",
+        ["ticker", sa.text("time DESC")],
+        unique=False,
+    )
     op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
     op.execute("SELECT create_hypertable('stock_prices', 'time', if_not_exists => TRUE)")
 
@@ -49,7 +54,12 @@ def upgrade() -> None:
         sa.Column("interval", sa.String(length=10), nullable=False),
         sa.PrimaryKeyConstraint("time", "ticker"),
     )
-    op.create_index("ix_crypto_prices_ticker_time", "crypto_prices", ["ticker", "time"], unique=False)
+    op.create_index(
+        "ix_crypto_prices_ticker_time_desc",
+        "crypto_prices",
+        ["ticker", sa.text("time DESC")],
+        unique=False,
+    )
     op.execute("SELECT create_hypertable('crypto_prices', 'time', if_not_exists => TRUE)")
 
     op.create_table(
@@ -295,8 +305,8 @@ def downgrade() -> None:
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")
 
-    op.drop_index("ix_crypto_prices_ticker_time", table_name="crypto_prices")
+    op.drop_index("ix_crypto_prices_ticker_time_desc", table_name="crypto_prices")
     op.drop_table("crypto_prices")
 
-    op.drop_index("ix_stock_prices_ticker_time", table_name="stock_prices")
+    op.drop_index("ix_stock_prices_ticker_time_desc", table_name="stock_prices")
     op.drop_table("stock_prices")
