@@ -16,3 +16,4 @@ dist/
 .vscode/
 celerybeat-schedule
 celerybeat.pid
+uv.lock
