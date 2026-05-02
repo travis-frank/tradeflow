@@ -32,3 +32,6 @@ setup:
 	cd backend && uv sync
 	cd backend && uv run pre-commit install
 	@echo "tradeflow ready — edit .env then run: make dev"
+
+start:
+	docker compose up
