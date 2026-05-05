@@ -2,6 +2,7 @@ from core.telemetry import init_datadog
 init_datadog()
 
 import structlog
+from api.routes.auth import router as auth_router
 from api.routes.prices import router as prices_router
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,7 +39,6 @@ app.add_middleware(
 
 app.add_middleware(RateLimitMiddleware)
 
-auth_router: APIRouter = APIRouter()
 crypto_router: APIRouter = APIRouter()
 fundamentals_router: APIRouter = APIRouter()
 news_router: APIRouter = APIRouter()
