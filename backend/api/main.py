@@ -4,6 +4,7 @@ init_datadog()
 import structlog
 from api.routes.auth import router as auth_router
 from api.routes.prices import router as prices_router
+from api.routes.watchlist import router as watchlist_router
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
@@ -42,7 +43,6 @@ app.add_middleware(RateLimitMiddleware)
 crypto_router: APIRouter = APIRouter()
 fundamentals_router: APIRouter = APIRouter()
 news_router: APIRouter = APIRouter()
-watchlist_router: APIRouter = APIRouter()
 portfolio_router: APIRouter = APIRouter()
 agent_router: APIRouter = APIRouter()
 
