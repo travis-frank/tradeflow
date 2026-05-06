@@ -1,4 +1,4 @@
-# tradeflow.ai
+# tradeflow
 
 Production financial data platform — real-time stock and crypto prices,
 fundamentals, technical indicators, AI research agent, and portfolio analytics.
