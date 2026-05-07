@@ -5,6 +5,7 @@ import structlog
 from api.routes.auth import router as auth_router
 from api.routes.crypto import router as crypto_router
 from api.routes.fundamentals import router as fundamentals_router
+from api.routes.news import router as news_router
 from api.routes.prices import router as prices_router
 from api.routes.watchlist import router as watchlist_router
 from fastapi import APIRouter, FastAPI
@@ -42,7 +43,6 @@ app.add_middleware(
 
 app.add_middleware(RateLimitMiddleware)
 
-news_router: APIRouter = APIRouter()
 portfolio_router: APIRouter = APIRouter()
 agent_router: APIRouter = APIRouter()
 

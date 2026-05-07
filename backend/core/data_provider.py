@@ -99,12 +99,17 @@ class YFinanceProvider(DataProvider):
             )
             articles: list[dict] = []
             for item in news_items:
-                published_at: Any = item.get("providerPublishTime") or item.get("published_at")
+                content = item.get("content", {})
+                url = (
+                    (content.get("canonicalUrl") or {}).get("url")
+                    or (content.get("clickThroughUrl") or {}).get("url")
+                )
+                pub_date = content.get("pubDate")
                 articles.append({
-                    "title": item.get("title"),
-                    "url": item.get("link") or item.get("url"),
-                    "published_at": published_at,
-                    "source": item.get("publisher") or item.get("source"),
+                    "title": content.get("title"),
+                    "url": url,
+                    "published_at": pub_date,
+                    "source": (content.get("provider") or {}).get("displayName"),
                 })
             return articles
         except Exception:
