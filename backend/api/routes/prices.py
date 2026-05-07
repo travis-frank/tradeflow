@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
 import math
+from time import perf_counter
 from typing import Any
 
 import sqlalchemy as sa
@@ -10,10 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cache.redis_client import cache_get, cache_set, historical_key, price_key
+from cache.redis_client import cache_get, cache_set, historical_key, indicators_key, price_key
 from core.config import get_settings
 from core.data_provider import get_provider
-from core.metrics import api_call, cache_hit, cache_miss
+from core.indicators import calculate_bollinger_bands, calculate_macd, calculate_rsi
+from core.metrics import api_call, cache_hit, cache_miss, record_latency
 from db.session import get_db
 
 
@@ -62,6 +64,29 @@ class HistoricalPricesResponse(BaseModel):
     end: str
     bars: list[OHLCVBar]
     cached: bool
+
+
+class MACDPoint(BaseModel):
+    macd: float | None
+    signal: float | None
+    histogram: float | None
+
+
+class BollingerPoint(BaseModel):
+    upper: float | None
+    middle: float | None
+    lower: float | None
+
+
+class IndicatorsResponse(BaseModel):
+    ticker: str
+    start: str
+    end: str
+    cached: bool
+    bars: list[str]
+    rsi: list[float | None]
+    macd: list[MACDPoint]
+    bollinger: list[BollingerPoint]
 
 
 async def _persist_ohlcv_bars(
@@ -326,3 +351,137 @@ async def get_historical_prices(
     }
     await cache_set(key, payload, settings.cache_ttl_historical)
     return HistoricalPricesResponse(**payload, cached=False)
+
+
+@router.get("/{ticker}/indicators", response_model=IndicatorsResponse)
+async def get_price_indicators(
+    ticker: str,
+    start: str,
+    end: str,
+    rsi_period: int = 14,
+    macd_fast: int = 12,
+    macd_slow: int = 26,
+    macd_signal: int = 9,
+    bb_period: int = 20,
+    bb_std: float = 2.0,
+    session: AsyncSession = Depends(get_db),
+) -> IndicatorsResponse:
+    started_at: float = perf_counter()
+    settings = get_settings()
+    normalized_ticker: str = ticker.upper()
+    key: str = indicators_key(normalized_ticker, start, end)
+
+    cached_data: Any | None = await cache_get(key)
+    if cached_data is not None:
+        cache_hit("prices_indicators")
+        if isinstance(cached_data, dict):
+            try:
+                response = IndicatorsResponse(**cached_data, cached=True)
+                record_latency("prices_indicators", (perf_counter() - started_at) * 1000.0)
+                return response
+            except ValidationError:
+                log.warning(
+                    "invalid cached indicators payload",
+                    ticker=normalized_ticker,
+                    start=start,
+                    end=end,
+                )
+        else:
+            log.warning(
+                "unexpected cached indicators payload type",
+                ticker=normalized_ticker,
+                start=start,
+                end=end,
+            )
+
+    cache_miss("prices_indicators")
+
+    bars: list[dict]
+    db_bars: list[dict] | None = await _fetch_from_db(
+        session=session,
+        ticker=normalized_ticker,
+        start=start,
+        end=end,
+    )
+    if db_bars is not None:
+        bars = db_bars
+        log.info(
+            "indicator source database",
+            ticker=normalized_ticker,
+            start=start,
+            end=end,
+            bars=len(bars),
+        )
+    else:
+        provider = get_provider()
+        try:
+            bars = await provider.get_historical(normalized_ticker, start, end)
+        except Exception:
+            log.exception(
+                "failed to fetch historical prices for indicators",
+                ticker=normalized_ticker,
+                start=start,
+                end=end,
+            )
+            raise HTTPException(status_code=502, detail="Failed to fetch price data")
+
+        api_call("yfinance", normalized_ticker)
+        await _persist_ohlcv_bars(
+            session=session,
+            ticker=normalized_ticker,
+            bars=bars,
+        )
+
+    normalized_bars: list[dict[str, str | float]] = []
+    for bar in bars:
+        time_value: Any = bar.get("time")
+        close_value: Any = bar.get("close")
+        if time_value is None or close_value is None:
+            continue
+        try:
+            normalized_bars.append({"time": str(time_value), "close": float(close_value)})
+        except (TypeError, ValueError):
+            continue
+
+    close_prices: list[float] = [float(bar["close"]) for bar in normalized_bars]
+    bar_times: list[str] = [str(bar["time"]) for bar in normalized_bars]
+
+    rsi_values: list[float | None] = calculate_rsi(close_prices, period=rsi_period)
+    macd_values: list[dict[str, float | None]] = calculate_macd(
+        close_prices,
+        fast=macd_fast,
+        slow=macd_slow,
+        signal=macd_signal,
+    )
+    bollinger_values: list[dict[str, float | None]] = calculate_bollinger_bands(
+        close_prices,
+        period=bb_period,
+        num_std=bb_std,
+    )
+
+    macd_points: list[MACDPoint] = [MACDPoint(**point) for point in macd_values]
+    bollinger_points: list[BollingerPoint] = [BollingerPoint(**point) for point in bollinger_values]
+
+    payload: dict[str, Any] = {
+        "ticker": normalized_ticker,
+        "start": start,
+        "end": end,
+        "bars": bar_times,
+        "rsi": rsi_values,
+        "macd": [point.model_dump() for point in macd_points],
+        "bollinger": [point.model_dump() for point in bollinger_points],
+    }
+    await cache_set(key, payload, settings.cache_ttl_historical)
+
+    response = IndicatorsResponse(
+        ticker=normalized_ticker,
+        start=start,
+        end=end,
+        cached=False,
+        bars=bar_times,
+        rsi=rsi_values,
+        macd=macd_points,
+        bollinger=bollinger_points,
+    )
+    record_latency("prices_indicators", (perf_counter() - started_at) * 1000.0)
+    return response

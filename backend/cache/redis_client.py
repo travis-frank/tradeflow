@@ -79,3 +79,7 @@ def crypto_price_key(ticker: str) -> str:
 
 def crypto_historical_key(ticker: str, start: str, end: str) -> str:
     return f"crypto:historical:{ticker.upper()}:{start}:{end}"
+
+
+def indicators_key(ticker: str, start: str, end: str) -> str:
+    return f"indicators:{ticker.upper()}:{start}:{end}"
