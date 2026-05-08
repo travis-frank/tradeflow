@@ -20,7 +20,7 @@ interface RequestOptions extends Omit<RequestInit, "headers"> {
   query?: Record<string, QueryParam | undefined>
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   readonly status: number
 
   constructor(status: number, message: string) {
