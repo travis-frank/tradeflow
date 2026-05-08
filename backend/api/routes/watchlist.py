@@ -72,6 +72,16 @@ async def add_watchlist_item(
 ) -> WatchlistItemResponse:
     ticker: str = payload.ticker.upper().strip()
     asset_type: AssetType = AssetType(payload.asset_type)
+    if asset_type == AssetType.crypto and "-" not in ticker:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Crypto tickers must be in format BTC-USD",
+        )
+    if asset_type == AssetType.stock and "-" in ticker:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Stock tickers cannot contain a dash",
+        )
 
     duplicate_check: Select[tuple[WatchlistItem]] = select(WatchlistItem).where(
         WatchlistItem.user_id == current_user.id,
