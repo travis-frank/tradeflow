@@ -18,7 +18,13 @@ class DataProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_historical(self, ticker: str, start: str, end: str) -> list[dict]:
+    async def get_historical(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> list[dict]:
         raise NotImplementedError
 
     @abstractmethod
@@ -34,7 +40,13 @@ class DataProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_crypto_historical(self, ticker: str, start: str, end: str) -> list[dict]:
+    async def get_crypto_historical(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> list[dict]:
         raise NotImplementedError
 
 
@@ -51,12 +63,18 @@ class YFinanceProvider(DataProvider):
             log.exception("failed to fetch current price", ticker=ticker)
             raise
 
-    async def get_historical(self, ticker: str, start: str, end: str) -> list[dict]:
+    async def get_historical(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> list[dict]:
         try:
             loop = asyncio.get_running_loop()
             history: Any = await loop.run_in_executor(
                 None,
-                lambda: yf.Ticker(ticker).history(start=start, end=end),
+                lambda: yf.Ticker(ticker).history(start=start, end=end, interval=interval),
             )
             records: list[dict] = []
             for timestamp, row in history.iterrows():
@@ -70,7 +88,13 @@ class YFinanceProvider(DataProvider):
                 })
             return records
         except Exception:
-            log.exception("failed to fetch historical data", ticker=ticker, start=start, end=end)
+            log.exception(
+                "failed to fetch historical data",
+                ticker=ticker,
+                start=start,
+                end=end,
+                interval=interval,
+            )
             raise
 
     async def get_fundamentals(self, ticker: str) -> dict:
@@ -123,11 +147,28 @@ class YFinanceProvider(DataProvider):
             log.exception("failed to fetch crypto price", ticker=ticker)
             raise
 
-    async def get_crypto_historical(self, ticker: str, start: str, end: str) -> list[dict]:
+    async def get_crypto_historical(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> list[dict]:
         try:
-            return await self.get_historical(ticker=ticker, start=start, end=end)
+            return await self.get_historical(
+                ticker=ticker,
+                start=start,
+                end=end,
+                interval=interval,
+            )
         except Exception:
-            log.exception("failed to fetch crypto historical data", ticker=ticker, start=start, end=end)
+            log.exception(
+                "failed to fetch crypto historical data",
+                ticker=ticker,
+                start=start,
+                end=end,
+                interval=interval,
+            )
             raise
 
 

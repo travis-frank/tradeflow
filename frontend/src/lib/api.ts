@@ -125,9 +125,14 @@ export const pricesApi = {
     return request<CurrentPriceResponse>(`/api/prices/current/${ticker}`)
   },
 
-  getHistorical(ticker: string, start: string, end: string): Promise<HistoricalResponse> {
+  getHistorical(
+    ticker: string,
+    start: string,
+    end: string,
+    interval: string = "1d"
+  ): Promise<HistoricalResponse> {
     return request<HistoricalResponse>(`/api/prices/historical/${ticker}`, {
-      query: { start, end },
+      query: { start, end, interval },
     })
   },
 
@@ -143,9 +148,14 @@ export const cryptoApi = {
     return request<CurrentPriceResponse>(`/api/crypto/current/${ticker}`)
   },
 
-  getHistorical(ticker: string, start: string, end: string): Promise<HistoricalResponse> {
+  getHistorical(
+    ticker: string,
+    start: string,
+    end: string,
+    interval: string = "1d"
+  ): Promise<HistoricalResponse> {
     return request<HistoricalResponse>(`/api/crypto/historical/${ticker}`, {
-      query: { start, end },
+      query: { start, end, interval },
     })
   },
 }

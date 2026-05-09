@@ -38,6 +38,37 @@ def _parse_range_end_exclusive(value: str) -> datetime:
         return datetime.combine(parsed_date + timedelta(days=1), time.min)
     return _parse_timestamp(value) + timedelta(microseconds=1)
 
+
+def _stock_db_coverage_sufficient(
+    bars: list[dict],
+    start: str,
+    end: str,
+    interval: str,
+) -> bool:
+    start_dt: datetime = _parse_range_start(start)
+    end_exclusive: datetime = _parse_range_end_exclusive(end)
+    calendar_days: float = max(
+        1.0,
+        (end_exclusive - start_dt).total_seconds() / 86400.0,
+    )
+
+    if interval == "1d":
+        required: int = max(1, int(calendar_days * 0.45))
+        return len(bars) >= required
+
+    intraday_expected: dict[str, int] = {
+        "5m": 78,
+        "15m": 26,
+        "30m": 13,
+        "1h": 7,
+    }
+    if interval in intraday_expected:
+        required = max(1, int(calendar_days * intraday_expected[interval] * 0.15))
+        return len(bars) >= required
+
+    required = max(1, int(calendar_days * 0.3))
+    return len(bars) >= required
+
 log = structlog.get_logger()
 router: APIRouter = APIRouter()
 
@@ -93,6 +124,7 @@ async def _persist_ohlcv_bars(
     session: AsyncSession,
     ticker: str,
     bars: list[dict],
+    interval: str = "1d",
 ) -> None:
     if not bars:
         log.info("stock bars persisted", ticker=ticker, attempted=0, persisted=0)
@@ -127,7 +159,7 @@ async def _persist_ohlcv_bars(
                     "low": bar.get("low"),
                     "close": bar.get("close"),
                     "volume": volume_value,
-                    "interval": "1d",
+                    "interval": interval,
                 },
             )
             if result.rowcount and result.rowcount > 0:
@@ -150,12 +182,14 @@ async def _fetch_from_db(
     ticker: str,
     start: str,
     end: str,
+    interval: str = "1d",
 ) -> list[dict] | None:
     statement: sa.TextClause = sa.text(
         """
         SELECT time, open, high, low, close, volume
         FROM stock_prices
         WHERE ticker = :ticker
+          AND interval = :interval
           AND time >= :start
           AND time < :end_exclusive
           AND open IS NOT NULL
@@ -172,6 +206,7 @@ async def _fetch_from_db(
             statement,
             {
                 "ticker": ticker,
+                "interval": interval,
                 "start": _parse_range_start(start),
                 "end_exclusive": _parse_range_end_exclusive(end),
             },
@@ -210,7 +245,6 @@ async def _fetch_from_db(
 @router.get("/current/{ticker}", response_model=CurrentPriceResponse)
 async def get_current_price(
     ticker: str,
-    session: AsyncSession = Depends(get_db),
 ) -> CurrentPriceResponse:
     settings = get_settings()
     normalized_ticker: str = ticker.upper()
@@ -238,21 +272,6 @@ async def get_current_price(
 
     api_call("yfinance", normalized_ticker)
 
-    await _persist_ohlcv_bars(
-        session=session,
-        ticker=normalized_ticker,
-        bars=[
-            {
-                "time": datetime.utcnow().isoformat(),
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": 0,
-            }
-        ],
-    )
-
     payload: dict[str, Any] = {
         "ticker": normalized_ticker,
         "price": price,
@@ -272,7 +291,7 @@ async def get_historical_prices(
 ) -> HistoricalPricesResponse:
     settings = get_settings()
     normalized_ticker: str = ticker.upper()
-    key: str = historical_key(normalized_ticker, start, end)
+    key: str = historical_key(normalized_ticker, start, end, interval)
 
     cached_data: Any | None = await cache_get(key)
     if cached_data is not None:
@@ -302,9 +321,10 @@ async def get_historical_prices(
         ticker=normalized_ticker,
         start=start,
         end=end,
+        interval=interval,
     )
 
-    if db_bars is not None:
+    if db_bars is not None and _stock_db_coverage_sufficient(db_bars, start, end, interval):
         log.info(
             "historical prices served from database",
             ticker=normalized_ticker,
@@ -320,11 +340,25 @@ async def get_historical_prices(
         }
         await cache_set(key, payload, settings.cache_ttl_historical)
         return HistoricalPricesResponse(**payload, cached=False)
+    if db_bars is not None:
+        log.info(
+            "historical database coverage incomplete",
+            ticker=normalized_ticker,
+            start=start,
+            end=end,
+            interval=interval,
+            db_bars=len(db_bars),
+        )
 
     provider = get_provider()
 
     try:
-        bars: list[dict] = await provider.get_historical(normalized_ticker, start, end)
+        bars = await provider.get_historical(
+            normalized_ticker,
+            start,
+            end,
+            interval=interval,
+        )
     except Exception:
         log.exception(
             "failed to fetch historical prices",
@@ -341,6 +375,7 @@ async def get_historical_prices(
         session=session,
         ticker=normalized_ticker,
         bars=bars,
+        interval=interval,
     )
 
     payload = {
@@ -403,7 +438,7 @@ async def get_price_indicators(
         start=start,
         end=end,
     )
-    if db_bars is not None:
+    if db_bars is not None and _stock_db_coverage_sufficient(db_bars, start, end, "1d"):
         bars = db_bars
         log.info(
             "indicator source database",
@@ -412,10 +447,23 @@ async def get_price_indicators(
             end=end,
             bars=len(bars),
         )
-    else:
+    elif db_bars is not None:
+        log.info(
+            "indicator database coverage incomplete",
+            ticker=normalized_ticker,
+            start=start,
+            end=end,
+            interval="1d",
+            db_bars=len(db_bars),
+        )
         provider = get_provider()
         try:
-            bars = await provider.get_historical(normalized_ticker, start, end)
+            bars = await provider.get_historical(
+                normalized_ticker,
+                start,
+                end,
+                interval="1d",
+            )
         except Exception:
             log.exception(
                 "failed to fetch historical prices for indicators",
@@ -430,6 +478,32 @@ async def get_price_indicators(
             session=session,
             ticker=normalized_ticker,
             bars=bars,
+            interval="1d",
+        )
+    else:
+        provider = get_provider()
+        try:
+            bars = await provider.get_historical(
+                normalized_ticker,
+                start,
+                end,
+                interval="1d",
+            )
+        except Exception:
+            log.exception(
+                "failed to fetch historical prices for indicators",
+                ticker=normalized_ticker,
+                start=start,
+                end=end,
+            )
+            raise HTTPException(status_code=502, detail="Failed to fetch price data")
+
+        api_call("yfinance", normalized_ticker)
+        await _persist_ohlcv_bars(
+            session=session,
+            ticker=normalized_ticker,
+            bars=bars,
+            interval="1d",
         )
 
     normalized_bars: list[dict[str, str | float]] = []

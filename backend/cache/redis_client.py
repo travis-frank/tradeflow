@@ -61,8 +61,8 @@ def price_key(ticker: str) -> str:
     return f"price:current:{ticker.upper()}"
 
 
-def historical_key(ticker: str, start: str, end: str) -> str:
-    return f"price:historical:{ticker.upper()}:{start}:{end}"
+def historical_key(ticker: str, start: str, end: str, interval: str = "1d") -> str:
+    return f"price:historical:{ticker.upper()}:{start}:{end}:{interval}"
 
 
 def fundamentals_key(ticker: str, statement: str) -> str:
@@ -77,8 +77,8 @@ def crypto_price_key(ticker: str) -> str:
     return f"crypto:current:{ticker.upper()}"
 
 
-def crypto_historical_key(ticker: str, start: str, end: str) -> str:
-    return f"crypto:historical:{ticker.upper()}:{start}:{end}"
+def crypto_historical_key(ticker: str, start: str, end: str, interval: str = "1d") -> str:
+    return f"crypto:historical:{ticker.upper()}:{start}:{end}:{interval}"
 
 
 def indicators_key(ticker: str, start: str, end: str) -> str:
