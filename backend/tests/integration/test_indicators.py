@@ -103,3 +103,36 @@ async def test_custom_rsi_period(async_client: AsyncClient) -> None:
     assert len(rsi_values) >= 10
     assert all(value is None for value in rsi_values[:9])
     assert rsi_values[9] is not None
+
+
+@pytest.mark.asyncio
+async def test_indicators_fetch_wide_range_when_db_coverage_is_partial(
+    async_client: AsyncClient,
+) -> None:
+    seed_response = await async_client.get(
+        "/api/prices/historical/MSFT",
+        params={
+            "start": "2026-04-01",
+            "end": "2026-05-01",
+            "interval": "1d",
+        },
+    )
+    assert seed_response.status_code == 200
+    seed_data: dict[str, Any] = seed_response.json()
+    seeded_count: int = len(seed_data["bars"])
+    assert seeded_count > 0
+
+    indicators_response = await async_client.get(
+        "/api/prices/MSFT/indicators",
+        params={"start": "2025-05-01", "end": "2026-05-01"},
+    )
+    assert indicators_response.status_code == 200
+    indicators_data: dict[str, Any] = indicators_response.json()
+    bars_count: int = len(indicators_data["bars"])
+
+    assert bars_count > seeded_count
+    assert bars_count >= 150
+
+    macd_values: list[dict[str, float | None]] = indicators_data["macd"]
+    assert any(point["signal"] is not None for point in macd_values[-20:])
+    assert any(point["histogram"] is not None for point in macd_values[-20:])

@@ -50,6 +50,37 @@ def _currency_from_ticker(ticker: str) -> str:
     return "USD"
 
 
+def _crypto_db_coverage_sufficient(
+    bars: list[dict],
+    start: str,
+    end: str,
+    interval: str,
+) -> bool:
+    start_dt: datetime = _parse_range_start(start)
+    end_exclusive: datetime = _parse_range_end_exclusive(end)
+    calendar_days: float = max(
+        1.0,
+        (end_exclusive - start_dt).total_seconds() / 86400.0,
+    )
+
+    if interval == "1d":
+        required: int = max(1, int(calendar_days * 0.75))
+        return len(bars) >= required
+
+    intraday_expected: dict[str, int] = {
+        "5m": 288,
+        "15m": 96,
+        "30m": 48,
+        "1h": 24,
+    }
+    if interval in intraday_expected:
+        required = max(1, int(calendar_days * intraday_expected[interval] * 0.2))
+        return len(bars) >= required
+
+    required = max(1, int(calendar_days * 0.5))
+    return len(bars) >= required
+
+
 class CryptoPriceResponse(BaseModel):
     ticker: str
     price: float
@@ -78,6 +109,7 @@ async def _persist_ohlcv_bars(
     session: AsyncSession,
     ticker: str,
     bars: list[dict],
+    interval: str = "1d",
 ) -> None:
     if not bars:
         log.info("crypto bars persisted", ticker=ticker, attempted=0, persisted=0)
@@ -112,7 +144,7 @@ async def _persist_ohlcv_bars(
                     "low": bar.get("low"),
                     "close": bar.get("close"),
                     "volume": volume_value,
-                    "interval": "1d",
+                    "interval": interval,
                 },
             )
             if result.rowcount and result.rowcount > 0:
@@ -135,11 +167,13 @@ async def _fetch_from_db(
     ticker: str,
     start: str,
     end: str,
+    interval: str = "1d",
 ) -> list[dict] | None:
     statement: Select[tuple[CryptoPrice]] = (
         select(CryptoPrice)
         .where(
             CryptoPrice.ticker == ticker,
+            CryptoPrice.interval == interval,
             CryptoPrice.time >= _parse_range_start(start),
             CryptoPrice.time < _parse_range_end_exclusive(end),
             CryptoPrice.open.is_not(None),
@@ -185,7 +219,6 @@ async def _fetch_from_db(
 @router.get("/current/{ticker}", response_model=CryptoPriceResponse)
 async def get_crypto_current_price(
     ticker: str,
-    session: AsyncSession = Depends(get_db),
 ) -> CryptoPriceResponse:
     started: float = perf_counter()
     settings = get_settings()
@@ -216,21 +249,6 @@ async def get_crypto_current_price(
 
     api_call("yfinance", normalized_ticker)
 
-    await _persist_ohlcv_bars(
-        session=session,
-        ticker=normalized_ticker,
-        bars=[
-            {
-                "time": datetime.utcnow().isoformat(),
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": 0,
-            }
-        ],
-    )
-
     payload: dict[str, Any] = {
         "ticker": normalized_ticker,
         "price": price,
@@ -252,7 +270,7 @@ async def get_crypto_historical_prices(
     started: float = perf_counter()
     settings = get_settings()
     normalized_ticker: str = ticker.upper()
-    key: str = crypto_historical_key(normalized_ticker, start, end)
+    key: str = crypto_historical_key(normalized_ticker, start, end, interval)
 
     cached_data: Any | None = await cache_get(key)
     if cached_data is not None:
@@ -284,14 +302,16 @@ async def get_crypto_historical_prices(
         ticker=normalized_ticker,
         start=start,
         end=end,
+        interval=interval,
     )
 
-    if db_bars is not None:
+    if db_bars is not None and _crypto_db_coverage_sufficient(db_bars, start, end, interval):
         log.info(
             "crypto historical prices served from database",
             ticker=normalized_ticker,
             start=start,
             end=end,
+            interval=interval,
             bars=len(db_bars),
         )
         payload: dict[str, Any] = {
@@ -303,11 +323,25 @@ async def get_crypto_historical_prices(
         await cache_set(key, payload, settings.cache_ttl_historical)
         record_latency("crypto_historical", (perf_counter() - started) * 1000)
         return CryptoHistoricalResponse(**payload, cached=False)
+    if db_bars is not None:
+        log.info(
+            "historical database coverage incomplete",
+            ticker=normalized_ticker,
+            start=start,
+            end=end,
+            interval=interval,
+            db_bars=len(db_bars),
+        )
 
     provider = get_provider()
 
     try:
-        bars: list[dict] = await provider.get_crypto_historical(normalized_ticker, start, end)
+        bars = await provider.get_crypto_historical(
+            normalized_ticker,
+            start,
+            end,
+            interval=interval,
+        )
     except Exception:
         log.exception(
             "failed to fetch crypto historical prices",
@@ -324,6 +358,7 @@ async def get_crypto_historical_prices(
         session=session,
         ticker=normalized_ticker,
         bars=bars,
+        interval=interval,
     )
 
     payload: dict[str, Any] = {
