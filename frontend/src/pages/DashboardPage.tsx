@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactElement } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { LogOut, Plus, Search } from "lucide-react"
 
@@ -112,6 +112,9 @@ export function DashboardPage(): ReactElement {
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
           <div className="text-xl font-semibold tracking-tight">tradeflow.ai</div>
           <div className="flex items-center gap-4">
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/search">Search markets</Link>
+            </Button>
             <span className="text-sm text-gray-300">{welcomeEmail}</span>
             <Button onClick={handleSignOut} size="sm" variant="outline">
               <LogOut className="mr-2 size-4" />
