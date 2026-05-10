@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent, type ReactElement } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { LogOut, Plus, Search } from "lucide-react"
+import { Brain, LogOut, Plus, Search } from "lucide-react"
 
 import { ApiError, watchlistApi } from "@/lib/api"
 import type { WatchlistItem } from "@/lib/types"
@@ -113,7 +113,16 @@ export function DashboardPage(): ReactElement {
           <div className="text-xl font-semibold tracking-tight">tradeflow.ai</div>
           <div className="flex items-center gap-4">
             <Button asChild size="sm" variant="ghost">
-              <Link to="/search">Search markets</Link>
+              <Link to="/search">
+                <Search className="mr-2 size-4" />
+                Search markets
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/research">
+                <Brain className="mr-2 size-4" />
+                Research
+              </Link>
             </Button>
             <span className="text-sm text-gray-300">{welcomeEmail}</span>
             <Button onClick={handleSignOut} size="sm" variant="outline">
