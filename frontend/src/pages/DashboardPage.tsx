@@ -24,6 +24,13 @@ const getErrorMessage = (error: unknown): string => {
   return "Request failed. Please try again."
 }
 
+const shouldRetryDashboardRequest = (failureCount: number, error: unknown): boolean => {
+  if (error instanceof ApiError && error.status === 429) {
+    return false
+  }
+  return failureCount < 1
+}
+
 export function DashboardPage(): ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -44,7 +51,10 @@ export function DashboardPage(): ReactElement {
   } = useQuery<WatchlistItem[]>({
     queryKey: ["watchlist"],
     queryFn: () => watchlistApi.getAll(),
-    staleTime: 25_000,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: shouldRetryDashboardRequest,
   })
 
   const addMutation = useMutation({
