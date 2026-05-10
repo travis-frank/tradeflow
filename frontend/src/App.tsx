@@ -6,6 +6,7 @@ import { DashboardPage } from "@/pages/DashboardPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { ResearchPage } from "@/pages/ResearchPage"
+import { SearchPage } from "@/pages/SearchPage"
 import { TickerDetailPage } from "@/pages/TickerDetailPage"
 
 function App(): ReactElement {
@@ -35,6 +36,14 @@ function App(): ReactElement {
         element={
           <ProtectedRoute>
             <ResearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/search"
+        element={
+          <ProtectedRoute>
+            <SearchPage />
           </ProtectedRoute>
         }
       />
