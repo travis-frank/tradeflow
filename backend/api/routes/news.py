@@ -72,10 +72,12 @@ async def _persist_news_articles(
     statement: sa.TextClause = sa.text(
         """
         INSERT INTO news_articles (
-            ticker, title, url, source, published_at, summary, sentiment, sentiment_score
+            ticker, title, url, source, published_at, summary, sentiment, sentiment_score,
+            created_at, updated_at
         )
         VALUES (
-            :ticker, :title, :url, :source, :published_at, :summary, :sentiment, :sentiment_score
+            :ticker, :title, :url, :source, :published_at, :summary, :sentiment, :sentiment_score,
+            NOW(), NOW()
         )
         ON CONFLICT DO NOTHING
         """

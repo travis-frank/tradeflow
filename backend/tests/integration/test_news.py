@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 @pytest.mark.asyncio
@@ -30,6 +32,38 @@ async def test_news_cached(async_client: AsyncClient) -> None:
     assert second.status_code == 200
     assert first.json()["cached"] is False
     assert second.json()["cached"] is True
+
+
+@pytest.mark.asyncio
+async def test_news_persists_articles_with_timestamps(
+    async_client: AsyncClient,
+    postgres_container,
+) -> None:
+    response = await async_client.get("/api/news/AAPL")
+
+    assert response.status_code == 200
+    assert len(response.json()["articles"]) > 0
+
+    engine = create_async_engine(postgres_container.async_url, echo=False)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                sa.text(
+                    """
+                    SELECT COUNT(*) AS article_count
+                    FROM news_articles
+                    WHERE ticker = :ticker
+                      AND created_at IS NOT NULL
+                      AND updated_at IS NOT NULL
+                    """
+                ),
+                {"ticker": "AAPL"},
+            )
+            article_count = result.scalar_one()
+    finally:
+        await engine.dispose()
+
+    assert article_count > 0
 
 
 @pytest.mark.asyncio
