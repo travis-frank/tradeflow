@@ -1,3 +1,5 @@
+export type AssetType = "stock" | "crypto"
+
 export interface CurrentPriceResponse {
   ticker: string
   price: number
@@ -73,9 +75,36 @@ export interface FundamentalsResponse {
 export interface WatchlistItem {
   id: number
   ticker: string
-  asset_type: "stock" | "crypto"
+  asset_type: AssetType
   notes: string | null
   created_at: string
+}
+
+export interface ResearchSource {
+  tool?: string
+  endpoint?: string
+  type?: string
+  [key: string]: unknown
+}
+
+export interface ResearchRequest {
+  ticker: string
+  asset_type: AssetType
+  question: string
+}
+
+export interface ResearchResponse {
+  ticker: string
+  asset_type: AssetType
+  question: string
+  summary: string
+  price_context: string
+  news_summary: string
+  technical_context: string
+  fundamental_context: string
+  risks: string[]
+  sources: ResearchSource[]
+  generated_at: string
 }
 
 export interface AuthToken {

@@ -5,6 +5,8 @@ import type {
   HistoricalResponse,
   IndicatorsResponse,
   NewsResponse,
+  ResearchRequest,
+  ResearchResponse,
   User,
   WatchlistItem,
 } from "@/lib/types"
@@ -58,6 +60,21 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
       const detail = (data as { detail: unknown }).detail
       if (typeof detail === "string") {
         return detail
+      }
+      if (Array.isArray(detail)) {
+        const messages = detail
+          .map((item) => {
+            if (typeof item === "object" && item !== null && "msg" in item) {
+              const message = (item as { msg: unknown }).msg
+              return typeof message === "string" ? message : null
+            }
+            return null
+          })
+          .filter((message): message is string => Boolean(message))
+
+        if (messages.length > 0) {
+          return messages.join("; ")
+        }
       }
     }
   } catch {
@@ -178,6 +195,13 @@ export const newsApi = {
   getNews(ticker: string): Promise<NewsResponse> {
     return request<NewsResponse>(`/api/news/${ticker}`)
   },
+}
+
+export const researchAgent = (payload: ResearchRequest): Promise<ResearchResponse> => {
+  return request<ResearchResponse>("/api/agent/research", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
 }
 
 export const watchlistApi = {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -54,6 +55,8 @@ async def test_research_stock_success(async_client: AsyncClient) -> None:
     assert data["asset_type"] == "stock"
     assert data["generated_at"]
     assert data["price_context"]
+    assert not re.search(r"\d+\.\d{6,}", data["price_context"])
+    assert "None" not in data["technical_context"]
     assert isinstance(data["sources"], list)
 
 
@@ -75,9 +78,7 @@ async def test_research_crypto_success(async_client: AsyncClient) -> None:
     data = response.json()
     assert data["ticker"] == "BTC-USD"
     assert data["asset_type"] == "crypto"
-    assert data["fundamental_context"] == "" or "not available" in data[
-        "fundamental_context"
-    ].lower()
+    assert data["fundamental_context"] == ""
     assert isinstance(data["sources"], list)
 
 
