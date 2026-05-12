@@ -372,6 +372,52 @@ def _parse_tool_json(value: Any) -> dict[str, Any]:
     return {"raw": parsed}
 
 
+def _coerce_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_currency(value: Any, currency: str = "USD") -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return "Data not available"
+    return f"${number:,.2f} {currency}"
+
+
+def _format_large_number(value: Any) -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return "Data not available"
+
+    sign = "-" if number < 0 else ""
+    absolute = abs(number)
+
+    if absolute >= 1_000_000_000:
+        return f"{sign}${absolute / 1_000_000_000:,.2f}B"
+    if absolute >= 1_000_000:
+        return f"{sign}${absolute / 1_000_000:,.2f}M"
+    return f"{sign}${absolute:,.2f}"
+
+
+def _format_percent_like(value: Any) -> str:
+    number = _coerce_float(value)
+    if number is None:
+        return "Data not available"
+    return f"{number:.2f}"
+
+
+def _humanize_metric_name(name: str) -> str:
+    return name.replace("_", " ").capitalize()
+
+
 def _format_price_context(tool_results: dict[str, Any], asset_type: AssetType) -> str:
     key = "get_crypto_price" if asset_type == "crypto" else "get_current_price"
     data = _parse_tool_json(tool_results.get(key))
@@ -382,7 +428,7 @@ def _format_price_context(tool_results: dict[str, Any], asset_type: AssetType) -
     ticker = data.get("ticker")
     if price is None:
         return "Price data unavailable."
-    return f"{ticker} last traded at {price} {currency}."
+    return f"{ticker} last traded at {_format_currency(price, str(currency))}."
 
 
 def _format_news_summary(tool_results: dict[str, Any]) -> str:
@@ -399,7 +445,9 @@ def _format_news_summary(tool_results: dict[str, Any]) -> str:
             source = article.get("source")
             suffix = f" ({source})" if source else ""
             headlines.append(f"{article['title']}{suffix}")
-    return " | ".join(headlines)
+    if not headlines:
+        return ""
+    return f"Recent headlines include: {'; '.join(headlines)}."
 
 
 def _latest_non_null(values: list[Any]) -> Any | None:
@@ -414,7 +462,10 @@ def _format_technical_context(tool_results: dict[str, Any], asset_type: AssetTyp
         data = _parse_tool_json(tool_results.get("get_crypto_historical"))
         bars = data.get("bars")
         if isinstance(bars, list) and bars:
-            return f"Historical crypto context includes {len(bars)} recent bars."
+            return (
+                f"Historical crypto context includes {len(bars)} recent bars "
+                "for the selected lookback window."
+            )
         return ""
 
     data = _parse_tool_json(tool_results.get("get_indicators"))
@@ -426,17 +477,50 @@ def _format_technical_context(tool_results: dict[str, Any], asset_type: AssetTyp
 
     parts: list[str] = []
     if isinstance(bars, list):
-        parts.append(f"{len(bars)} indicator observations")
+        parts.append(f"{len(bars)} indicator observations available.")
     if isinstance(rsi, list):
         latest_rsi = _latest_non_null(rsi)
         if latest_rsi is not None:
-            parts.append(f"latest RSI {latest_rsi}")
+            parts.append(f"Latest RSI: {_format_percent_like(latest_rsi)}.")
+        else:
+            parts.append("RSI data is not available for the latest observation.")
     if isinstance(macd, list) and macd:
         latest_macd = next((point for point in reversed(macd) if isinstance(point, dict)), None)
         if latest_macd is not None:
-            parts.append(f"latest MACD {latest_macd.get('macd')}")
+            macd_value = latest_macd.get("macd")
+            if macd_value is None:
+                parts.append("MACD data is not available for the latest observation.")
+            else:
+                parts.append(f"Latest MACD: {_format_percent_like(macd_value)}.")
+    elif "get_indicators" in tool_results:
+        parts.append("MACD data is not available.")
 
-    return "; ".join(parts)
+    return " ".join(parts)
+
+
+def _statement_metrics(statement_type: str, latest: dict[str, Any]) -> list[tuple[str, Any]]:
+    preferred_metrics: dict[str, list[str]] = {
+        "get_fundamentals": ["revenue", "gross_profit", "operating_income"],
+        "get_balance_sheet": ["total_assets", "total_liabilities", "total_equity"],
+        "get_cash_flow": [
+            "operating_cash_flow",
+            "investing_cash_flow",
+            "financing_cash_flow",
+        ],
+    }
+    preferred = [
+        (name, latest[name])
+        for name in preferred_metrics.get(statement_type, [])
+        if latest.get(name) is not None
+    ]
+    if preferred:
+        return preferred
+
+    return [
+        (key, value)
+        for key, value in latest.items()
+        if key not in {"period_date", "period_type"} and value is not None
+    ][:3]
 
 
 def _format_fundamental_context(tool_results: dict[str, Any], asset_type: AssetType) -> str:
@@ -469,13 +553,48 @@ def _format_fundamental_context(tool_results: dict[str, Any], asset_type: AssetT
 
         period = latest.get("period_date", "latest period")
         metrics = [
-            f"{key}={value}"
-            for key, value in latest.items()
-            if key not in {"period_date", "period_type"} and value is not None
-        ][:3]
-        contexts.append(f"{label} {period}: {', '.join(metrics)}" if metrics else f"{label} {period}")
+            f"{_humanize_metric_name(key)} {_format_large_number(value)}"
+            for key, value in _statement_metrics(tool_name, latest)
+        ]
+        contexts.append(f"{label}, {period}: {', '.join(metrics)}." if metrics else f"{label}, {period}.")
 
-    return " | ".join(contexts)
+    return "\n".join(contexts)
+
+
+def _format_deterministic_summary(
+    ticker: str,
+    question: str,
+    asset_type: AssetType,
+) -> str:
+    if asset_type == "crypto":
+        if _question_is_general_research(question):
+            return (
+                f"Deterministic research brief for {ticker} using current price, "
+                "recent historical data, and news."
+            )
+        if _question_wants_technical(question):
+            return (
+                f"Deterministic technical brief for {ticker} using current price "
+                "and recent historical data."
+            )
+        return f"Deterministic research brief for {ticker} using available market data."
+
+    if _question_is_general_research(question):
+        return (
+            f"Deterministic research brief for {ticker} using current price, recent news, "
+            "technical indicators, and fundamental statements."
+        )
+    if _question_wants_fundamentals(question):
+        return (
+            f"Deterministic fundamentals brief for {ticker} using income statement, "
+            "balance sheet, and cash flow data."
+        )
+    if _question_wants_technical(question):
+        return (
+            f"Deterministic technical brief for {ticker} using current price, "
+            "recent historical data, and indicators."
+        )
+    return f"Deterministic research brief for {ticker} using available market data."
 
 
 def _build_sources(tool_results: dict[str, Any]) -> list[dict[str, Any]]:
@@ -583,7 +702,7 @@ def _build_response_payload(
     summary = _string_from_report(
         parsed_report,
         "summary",
-        f"Research preview for {ticker}: {question}",
+        _format_deterministic_summary(ticker, question, asset_type),
     )
     price_context = _string_from_report(parsed_report, "price_context", price_context)
     news_summary = _string_from_report(parsed_report, "news_summary", news_summary)
@@ -600,7 +719,11 @@ def _build_response_payload(
     if asset_type == "crypto":
         fundamental_context = ""
 
-    fallback_risks = [] if llm_available else ["No LLM available — deterministic mode"]
+    fallback_risks = (
+        []
+        if llm_available
+        else ["Analysis generated in deterministic mode; LLM synthesis is disabled."]
+    )
     risks = _risks_from_report(parsed_report, fallback_risks)
     sources = _sources_from_report(parsed_report, sources)
 
