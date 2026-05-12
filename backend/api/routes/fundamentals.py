@@ -305,6 +305,7 @@ async def _persist_cash_flows(
         log.exception("failed to persist cash flow statements", ticker=ticker)
 
 
+@router.get("/{ticker}/income", response_model=IncomeStatementResponse)
 @router.get("/{ticker}/income-statement", response_model=IncomeStatementResponse)
 async def get_income_statement(
     ticker: str,

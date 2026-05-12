@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     openai_api_key: str = ""
+    api_base_url: str = "http://localhost:8000"
     data_provider: str = "yfinance"
     cache_ttl_current_price: int = 30
     cache_ttl_news: int = 900
