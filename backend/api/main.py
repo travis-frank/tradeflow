@@ -7,6 +7,7 @@ from api.routes.crypto import router as crypto_router
 from api.routes.fundamentals import router as fundamentals_router
 from api.routes.news import router as news_router
 from api.routes.prices import router as prices_router
+from api.routes.research import router as research_router
 from api.routes.watchlist import router as watchlist_router
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +45,6 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 portfolio_router: APIRouter = APIRouter()
-agent_router: APIRouter = APIRouter()
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(prices_router, prefix="/api/prices")
@@ -52,8 +52,8 @@ app.include_router(crypto_router, prefix="/api/crypto")
 app.include_router(fundamentals_router, prefix="/api/fundamentals")
 app.include_router(news_router, prefix="/api/news")
 app.include_router(watchlist_router, prefix="/api/watchlist")
+app.include_router(research_router, prefix="/api/agent", tags=["research"])
 app.include_router(portfolio_router, prefix="/api/portfolio")
-app.include_router(agent_router, prefix="/api/agent")
 
 
 @app.get("/health")
