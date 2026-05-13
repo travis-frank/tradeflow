@@ -18,3 +18,4 @@ dist/
 celerybeat-schedule
 celerybeat.pid
 uv.lock
+benchmarks/results/
