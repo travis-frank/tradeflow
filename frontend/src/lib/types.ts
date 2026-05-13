@@ -1,4 +1,6 @@
 export type AssetType = "stock" | "crypto"
+export type ResearchTracePhase = "planner" | "tool" | "synthesizer" | "fallback"
+export type ResearchTraceStatus = "success" | "error" | "skipped"
 
 export interface CurrentPriceResponse {
   ticker: string
@@ -87,6 +89,17 @@ export interface ResearchSource {
   [key: string]: unknown
 }
 
+export interface ResearchTraceEvent {
+  step: number
+  phase: ResearchTracePhase
+  action: string
+  tool?: string | null
+  endpoint?: string | null
+  status: ResearchTraceStatus
+  message: string
+  metadata: Record<string, unknown>
+}
+
 export interface ResearchRequest {
   ticker: string
   asset_type: AssetType
@@ -104,6 +117,7 @@ export interface ResearchResponse {
   fundamental_context: string
   risks: string[]
   sources: ResearchSource[]
+  trace: ResearchTraceEvent[]
   generated_at: string
 }
 

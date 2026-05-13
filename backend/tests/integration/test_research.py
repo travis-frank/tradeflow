@@ -224,3 +224,107 @@ async def test_research_crypto_general_question_skips_stock_fundamentals(
     assert "get_fundamentals" not in source_tools
     assert "get_balance_sheet" not in source_tools
     assert "get_cash_flow" not in source_tools
+
+
+@pytest.mark.asyncio
+async def test_research_trace_present(async_client: AsyncClient) -> None:
+    token = await _get_bearer_token(async_client)
+
+    response = await async_client.post(
+        "/api/agent/research",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "ticker": "AAPL",
+            "asset_type": "stock",
+            "question": "Give me an overall research overview of AAPL.",
+        },
+    )
+
+    assert response.status_code == 200
+    trace = response.json()["trace"]
+    assert isinstance(trace, list)
+    assert len(trace) > 0
+    for event in trace:
+        assert event["step"]
+        assert event["phase"]
+        assert event["action"]
+        assert event["message"]
+        assert event["status"]
+
+
+@pytest.mark.asyncio
+async def test_research_trace_stock_tools(async_client: AsyncClient) -> None:
+    token = await _get_bearer_token(async_client)
+
+    response = await async_client.post(
+        "/api/agent/research",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "ticker": "AAPL",
+            "asset_type": "stock",
+            "question": "Give me an overall research overview of AAPL.",
+        },
+    )
+
+    assert response.status_code == 200
+    tool_events = [
+        event for event in response.json()["trace"] if event["phase"] == "tool"
+    ]
+    trace_tools = {event["tool"] for event in tool_events}
+    assert {
+        "get_current_price",
+        "get_historical_prices",
+        "get_indicators",
+        "get_news",
+        "get_fundamentals",
+        "get_balance_sheet",
+        "get_cash_flow",
+    }.issubset(trace_tools)
+
+
+@pytest.mark.asyncio
+async def test_research_trace_crypto_tools(async_client: AsyncClient) -> None:
+    token = await _get_bearer_token(async_client)
+
+    response = await async_client.post(
+        "/api/agent/research",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "ticker": "BTC-USD",
+            "asset_type": "crypto",
+            "question": "Give me an overall research overview of Bitcoin.",
+        },
+    )
+
+    assert response.status_code == 200
+    tool_events = [
+        event for event in response.json()["trace"] if event["phase"] == "tool"
+    ]
+    trace_tools = {event["tool"] for event in tool_events}
+    assert {"get_crypto_price", "get_crypto_historical", "get_news"}.issubset(
+        trace_tools
+    )
+    assert "get_fundamentals" not in trace_tools
+    assert "get_balance_sheet" not in trace_tools
+    assert "get_cash_flow" not in trace_tools
+
+
+@pytest.mark.asyncio
+async def test_research_trace_no_chain_of_thought(async_client: AsyncClient) -> None:
+    token = await _get_bearer_token(async_client)
+
+    response = await async_client.post(
+        "/api/agent/research",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "ticker": "AAPL",
+            "asset_type": "stock",
+            "question": "Give me an overall research overview of AAPL.",
+        },
+    )
+
+    assert response.status_code == 200
+    for event in response.json()["trace"]:
+        message = event["message"]
+        assert not message.startswith("Thought:")
+        assert "Thought:" not in message

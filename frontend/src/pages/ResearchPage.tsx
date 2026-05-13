@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { ApiError, researchAgent } from "@/lib/api"
-import type { AssetType, ResearchRequest, ResearchResponse, ResearchSource } from "@/lib/types"
+import type { AssetType, ResearchRequest, ResearchResponse, ResearchTraceEvent } from "@/lib/types"
 
 const examplePrompts = [
   "Give me an overall research overview.",
@@ -71,32 +71,27 @@ const formatGeneratedAt = (generatedAt: string): string => {
   }).format(date)
 }
 
-const stringifyValue = (value: unknown): string => {
-  if (typeof value === "string") {
-    return value
+const getStatusBadgeClassName = (status: ResearchTraceEvent["status"]): string => {
+  if (status === "error") {
+    return "border-red-800 bg-red-950 text-red-300"
   }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value)
+  if (status === "skipped") {
+    return "border-amber-800 bg-amber-950 text-amber-300"
   }
-  if (value === null) {
-    return "null"
-  }
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return "Unsupported value"
-  }
+  return "border-emerald-800 bg-emerald-950 text-emerald-300"
 }
 
-const getSourceLabel = (source: ResearchSource, index: number): string => {
-  return source.tool ?? source.type ?? `Source ${index + 1}`
-}
-
-const getSourceDetails = (source: ResearchSource): string[] => {
-  return Object.entries(source)
-    .filter(([key, value]) => !["tool", "endpoint", "type"].includes(key) && value !== undefined)
-    .map(([key, value]) => `${key}: ${stringifyValue(value)}`)
+const getPhaseBadgeClassName = (phase: ResearchTraceEvent["phase"]): string => {
+  if (phase === "tool") {
+    return "border-sky-800 bg-sky-950 text-sky-300"
+  }
+  if (phase === "synthesizer") {
+    return "border-indigo-800 bg-indigo-950 text-indigo-300"
+  }
+  if (phase === "fallback") {
+    return "border-amber-800 bg-amber-950 text-amber-300"
+  }
+  return "border-gray-700 bg-gray-800 text-gray-200"
 }
 
 interface ResearchSectionProps {
@@ -141,6 +136,8 @@ export function ResearchPage(): ReactElement {
     }
     return formatGeneratedAt(researchResult.generated_at)
   }, [researchResult])
+
+  const traceEvents = researchResult?.trace ?? []
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -361,41 +358,63 @@ export function ResearchPage(): ReactElement {
                 )}
               </ResearchSection>
 
-              <ResearchSection title="Sources" icon={<Database className="size-4 text-gray-300" />}>
-                {researchResult.sources.length > 0 ? (
-                  <div className="space-y-3">
-                    {researchResult.sources.map((source, index) => {
-                      const details = getSourceDetails(source)
-
-                      return (
-                        <div className="rounded-lg border border-gray-800 bg-gray-950 p-3" key={index}>
+              <Card className="border-gray-800 bg-gray-900 text-gray-100">
+                <CardHeader className="pb-1">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-300 uppercase">
+                    <Database className="size-4 text-gray-300" />
+                    Agent traceability
+                  </CardTitle>
+                  <p className="text-xs leading-5 text-gray-500 normal-case">
+                    Tools, internal endpoints, and execution steps used to generate this brief.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {traceEvents.length > 0 ? (
+                    <div className="space-y-3">
+                      {traceEvents.map((event) => (
+                        <div
+                          className="rounded-lg border border-gray-800 bg-gray-950 p-3"
+                          key={`${event.step}-${event.phase}-${event.action}-${event.tool ?? "none"}`}
+                        >
                           <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="border-gray-700 bg-gray-800 text-gray-200" variant="outline">
-                              {getSourceLabel(source, index)}
+                            <span className="flex size-6 items-center justify-center rounded-full border border-gray-700 bg-gray-900 text-xs font-semibold text-gray-400">
+                              {event.step}
+                            </span>
+                            <Badge className={getPhaseBadgeClassName(event.phase)} variant="outline">
+                              {event.phase}
                             </Badge>
-                            {source.endpoint ? (
+                            <Badge className={getStatusBadgeClassName(event.status)} variant="outline">
+                              {event.status}
+                            </Badge>
+                            <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">
+                              {event.action.replace(/_/g, " ")}
+                            </span>
+                          </div>
+
+                          <p className="mt-3 text-sm leading-6 text-gray-200">{event.message}</p>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {event.tool ? (
+                              <Badge className="border-gray-700 bg-gray-800 text-gray-200" variant="outline">
+                                {event.tool}
+                              </Badge>
+                            ) : null}
+                            {event.endpoint ? (
                               <span className="break-all font-mono text-xs text-gray-500">
-                                {source.endpoint}
+                                {event.endpoint}
                               </span>
                             ) : null}
                           </div>
-                          {details.length > 0 ? (
-                            <div className="mt-2 space-y-1 text-xs text-gray-500">
-                              {details.map((detail) => (
-                                <p className="break-words" key={detail}>
-                                  {detail}
-                                </p>
-                              ))}
-                            </div>
-                          ) : null}
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <span className="text-gray-500">No sources returned.</span>
-                )}
-              </ResearchSection>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-500">
+                      No traceability data was returned for this brief.
+                    </span>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </div>
         ) : null}
