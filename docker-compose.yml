@@ -34,7 +34,7 @@ services:
     container_name: tradeflow-datadog
     environment:
       DD_API_KEY: ${DATADOG_API_KEY}
-      DD_SITE: datadoghq.com
+      DD_SITE: us5.datadoghq.com
       DD_APM_ENABLED: "true"
       DD_APM_NON_LOCAL_TRAFFIC: "true"
       DD_LOGS_ENABLED: "true"
@@ -114,22 +114,22 @@ services:
       - VITE_API_URL=http://localhost:8000
       - VITE_WS_URL=ws://localhost:8000
 
-  mcp:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/Dockerfile.api
-    container_name: tradeflow-mcp
-    env_file: .env
-    ports:
-      - "8001:8001"
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: python mcp/server.py
+  #mcp:
+  #  build:
+  #    context: ./backend
+  #    dockerfile: ../infra/docker/Dockerfile.api
+  #  container_name: tradeflow-mcp
+  #  env_file: .env
+  #  ports:
+  #    - "8001:8001"
+  #  depends_on:
+  #    timescaledb:
+  #      condition: service_healthy
+  #    redis:
+  #      condition: service_healthy
+  #  volumes:
+  #    - ./backend:/app
+  #  command: python mcp/server.py
 
 volumes:
   timescaledb_data:
