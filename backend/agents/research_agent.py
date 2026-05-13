@@ -21,7 +21,21 @@ from core.config import get_settings
 log = structlog.get_logger()
 
 AssetType = Literal["stock", "crypto"]
+TracePhase = Literal["planner", "tool", "synthesizer", "fallback"]
+TraceStatus = Literal["success", "error", "skipped"]
 MAX_TOOL_ITERATIONS = 3
+
+TOOL_ENDPOINTS: dict[str, str] = {
+    "get_current_price": "/api/prices/current/{ticker}",
+    "get_historical_prices": "/api/prices/historical/{ticker}",
+    "get_indicators": "/api/prices/{ticker}/indicators",
+    "get_news": "/api/news/{ticker}",
+    "get_fundamentals": "/api/fundamentals/{ticker}/income",
+    "get_balance_sheet": "/api/fundamentals/{ticker}/balance-sheet",
+    "get_cash_flow": "/api/fundamentals/{ticker}/cash-flow",
+    "get_crypto_price": "/api/crypto/current/{ticker}",
+    "get_crypto_historical": "/api/crypto/historical/{ticker}",
+}
 
 PLANNER_SYSTEM_PROMPT = """You are the tradeflow.ai ReAct research planner.
 Think step by step about which financial data is needed, then either call tools or stop when enough data has been gathered.
@@ -71,8 +85,82 @@ class ResearchState(TypedDict):
     question: str
     messages: Annotated[list[BaseMessage], operator.add]
     tool_results: Annotated[dict[str, Any], _merge_tool_results]
+    trace: Annotated[list[dict[str, Any]], operator.add]
     iterations: int
     report: str | None
+
+
+def _tool_endpoint(tool_name: str) -> str:
+    return TOOL_ENDPOINTS.get(tool_name, "")
+
+
+def _tool_contribution_message(tool_name: str) -> str:
+    messages: dict[str, str] = {
+        "get_current_price": "Fetched current stock price as baseline market context.",
+        "get_historical_prices": "Fetched recent stock price history for trend context.",
+        "get_indicators": "Fetched technical indicators for momentum and signal context.",
+        "get_news": "Fetched recent headlines for market and risk context.",
+        "get_fundamentals": "Fetched income statement data for fundamental context.",
+        "get_balance_sheet": "Fetched balance sheet data for asset and liability context.",
+        "get_cash_flow": "Fetched cash flow data for operating, investing, and financing context.",
+        "get_crypto_price": "Fetched current crypto price as baseline market context.",
+        "get_crypto_historical": "Fetched recent crypto price history for trend context.",
+    }
+    return messages.get(tool_name, "Executed a research data tool.")
+
+
+def _trace_event(
+    *,
+    phase: TracePhase,
+    action: str,
+    message: str,
+    status: TraceStatus = "success",
+    tool: str | None = None,
+    endpoint: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "step": 0,
+        "phase": phase,
+        "action": action,
+        "tool": tool,
+        "endpoint": endpoint,
+        "status": status,
+        "message": message,
+        "metadata": metadata or {},
+    }
+
+
+def _tool_status_from_result(result: str) -> TraceStatus:
+    data = _parse_tool_json(result)
+    return "error" if "error" in data else "success"
+
+
+def _tool_trace_event(
+    *,
+    tool_name: str,
+    result: str,
+    ticker: str,
+    asset_type: AssetType,
+) -> dict[str, Any]:
+    return _trace_event(
+        phase="tool",
+        action="call_tool",
+        tool=tool_name,
+        endpoint=_tool_endpoint(tool_name),
+        status=_tool_status_from_result(result),
+        message=_tool_contribution_message(tool_name),
+        metadata={"ticker": ticker, "asset_type": asset_type},
+    )
+
+
+def _normalize_trace_steps(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, event in enumerate(trace, start=1):
+        normalized_event = dict(event)
+        normalized_event["step"] = index
+        normalized.append(normalized_event)
+    return normalized
 
 
 def _has_llm_key() -> bool:
@@ -105,7 +193,21 @@ async def _planner_node(state: ResearchState) -> dict[str, Any]:
             *state["messages"],
         ]
     )
-    return {"messages": [response]}
+    return {
+        "messages": [response],
+        "trace": [
+            _trace_event(
+                phase="planner",
+                action="plan",
+                message="Planner selected tools based on ticker, asset type, and question.",
+                metadata={
+                    "ticker": state["ticker"],
+                    "asset_type": state["asset_type"],
+                    "iteration": state["iterations"],
+                },
+            )
+        ],
+    }
 
 
 async def _tools_node(state: ResearchState) -> dict[str, Any]:
@@ -113,6 +215,7 @@ async def _tools_node(state: ResearchState) -> dict[str, Any]:
     tool_calls = getattr(last_message, "tool_calls", []) or []
     tool_results: dict[str, Any] = {}
     messages: list[BaseMessage] = []
+    trace: list[dict[str, Any]] = []
     tool_map = (
         CRYPTO_RESEARCH_TOOL_MAP
         if state["asset_type"] == "crypto"
@@ -136,10 +239,19 @@ async def _tools_node(state: ResearchState) -> dict[str, Any]:
 
         tool_results[name] = result
         messages.append(ToolMessage(content=str(result), tool_call_id=tool_call_id, name=name))
+        trace.append(
+            _tool_trace_event(
+                tool_name=name,
+                result=str(result),
+                ticker=state["ticker"],
+                asset_type=cast(AssetType, state["asset_type"]),
+            )
+        )
 
     return {
         "messages": messages,
         "tool_results": tool_results,
+        "trace": trace,
         "iterations": state["iterations"] + 1,
     }
 
@@ -164,7 +276,18 @@ async def _synthesizer_node(state: ResearchState) -> dict[str, Any]:
         ]
     )
     report = str(response.content)
-    return {"messages": [response], "report": report}
+    return {
+        "messages": [response],
+        "report": report,
+        "trace": [
+            _trace_event(
+                phase="synthesizer",
+                action="synthesize",
+                message="Synthesized structured research response from gathered tool data.",
+                metadata={"ticker": state["ticker"], "asset_type": state["asset_type"]},
+            )
+        ],
+    }
 
 
 def _route_after_planner(state: ResearchState) -> str:
@@ -356,6 +479,43 @@ async def _collect_deterministic_tool_results(
         )
 
     return tool_results
+
+
+def _build_deterministic_trace(
+    ticker: str,
+    asset_type: AssetType,
+    tool_results: dict[str, Any],
+) -> list[dict[str, Any]]:
+    trace: list[dict[str, Any]] = [
+        _trace_event(
+            phase="fallback",
+            action="deterministic_mode",
+            message="LLM synthesis is disabled; using deterministic tool selection.",
+            metadata={"ticker": ticker, "asset_type": asset_type},
+        )
+    ]
+
+    if asset_type == "crypto":
+        trace.append(
+            _trace_event(
+                phase="planner",
+                action="skip_tool_group",
+                status="skipped",
+                message="Skipped stock fundamentals because asset type is crypto.",
+                metadata={"ticker": ticker, "asset_type": asset_type},
+            )
+        )
+
+    trace.extend(
+        _tool_trace_event(
+            tool_name=tool_name,
+            result=str(result),
+            ticker=ticker,
+            asset_type=asset_type,
+        )
+        for tool_name, result in tool_results.items()
+    )
+    return trace
 
 
 def _parse_tool_json(value: Any) -> dict[str, Any]:
@@ -598,21 +758,10 @@ def _format_deterministic_summary(
 
 
 def _build_sources(tool_results: dict[str, Any]) -> list[dict[str, Any]]:
-    source_paths: dict[str, str] = {
-        "get_current_price": "/api/prices/current/{ticker}",
-        "get_historical_prices": "/api/prices/historical/{ticker}",
-        "get_indicators": "/api/prices/{ticker}/indicators",
-        "get_news": "/api/news/{ticker}",
-        "get_fundamentals": "/api/fundamentals/{ticker}/income",
-        "get_balance_sheet": "/api/fundamentals/{ticker}/balance-sheet",
-        "get_cash_flow": "/api/fundamentals/{ticker}/cash-flow",
-        "get_crypto_price": "/api/crypto/current/{ticker}",
-        "get_crypto_historical": "/api/crypto/historical/{ticker}",
-    }
     return [
-        {"tool": name, "endpoint": source_paths.get(name, "")}
+        {"tool": name, "endpoint": _tool_endpoint(name)}
         for name in tool_results
-        if name in source_paths
+        if name in TOOL_ENDPOINTS
     ]
 
 
@@ -689,6 +838,7 @@ def _build_response_payload(
     question: str,
     asset_type: AssetType,
     tool_results: dict[str, Any],
+    trace: list[dict[str, Any]],
     report: str | None,
     llm_available: bool,
 ) -> dict[str, Any]:
@@ -738,9 +888,8 @@ def _build_response_payload(
         "fundamental_context": fundamental_context,
         "risks": risks,
         "sources": sources,
+        "trace": _normalize_trace_steps(trace),
         "generated_at": datetime.now(tz=UTC).isoformat(),
-        "tool_results": tool_results,
-        "report": report,
     }
 
 
@@ -755,11 +904,17 @@ async def run_research(ticker: str, question: str, asset_type: str) -> dict[str,
             question,
             normalized_asset_type,
         )
+        trace = _build_deterministic_trace(
+            normalized_ticker,
+            normalized_asset_type,
+            tool_results,
+        )
         return _build_response_payload(
             normalized_ticker,
             question,
             normalized_asset_type,
             tool_results,
+            trace,
             report=None,
             llm_available=False,
         )
@@ -779,6 +934,7 @@ async def run_research(ticker: str, question: str, asset_type: str) -> dict[str,
             )
         ],
         "tool_results": {},
+        "trace": [],
         "iterations": 0,
         "report": None,
     }
@@ -792,11 +948,17 @@ async def run_research(ticker: str, question: str, asset_type: str) -> dict[str,
             question,
             normalized_asset_type,
         )
+        trace = _build_deterministic_trace(
+            normalized_ticker,
+            normalized_asset_type,
+            tool_results,
+        )
         return _build_response_payload(
             normalized_ticker,
             question,
             normalized_asset_type,
             tool_results,
+            trace,
             report=None,
             llm_available=False,
         )
@@ -806,6 +968,7 @@ async def run_research(ticker: str, question: str, asset_type: str) -> dict[str,
         question,
         normalized_asset_type,
         dict(final_state.get("tool_results", {})),
+        list(final_state.get("trace", [])),
         report=final_state.get("report"),
         llm_available=True,
     )

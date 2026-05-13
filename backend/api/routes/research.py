@@ -14,6 +14,8 @@ log = structlog.get_logger()
 router: APIRouter = APIRouter()
 
 AssetType = Literal["stock", "crypto"]
+TracePhase = Literal["planner", "tool", "synthesizer", "fallback"]
+TraceStatus = Literal["success", "error", "skipped"]
 
 
 class ResearchRequest(BaseModel):
@@ -38,6 +40,17 @@ class ResearchRequest(BaseModel):
         return normalized
 
 
+class ResearchTraceEvent(BaseModel):
+    step: int
+    phase: TracePhase
+    action: str
+    tool: str | None = None
+    endpoint: str | None = None
+    status: TraceStatus = "success"
+    message: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ResearchResponse(BaseModel):
     ticker: str
     asset_type: AssetType
@@ -49,6 +62,7 @@ class ResearchResponse(BaseModel):
     fundamental_context: str
     risks: list[str]
     sources: list[dict[str, Any]]
+    trace: list[ResearchTraceEvent]
     generated_at: str
 
 
@@ -96,5 +110,6 @@ async def create_research_report(
         fundamental_context=str(result.get("fundamental_context", "")),
         risks=list(result.get("risks", [])),
         sources=list(result.get("sources", [])),
+        trace=list(result.get("trace", [])),
         generated_at=str(result.get("generated_at", "")),
     )
