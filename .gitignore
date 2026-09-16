@@ -47,3 +47,4 @@ terraform.tfplan
 infra/*.log
 infra/output/
 infra/*.out
+infra/.deployed-steps
