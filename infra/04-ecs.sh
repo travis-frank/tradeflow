@@ -167,8 +167,8 @@ host = os.environ["DB_HOST"]
 token = quote(rd["auth_token"], safe="")
 rhost = os.environ["REDIS_ENDPOINT"]
 rport = os.environ["REDIS_PORT"]
-# rediss:// = TLS; ssl_cert_reqs required by redis-py for ElastiCache in-transit
-ssl_q = "ssl_cert_reqs=CERT_REQUIRED"
+# rediss:// = TLS; redis-py URL flag is "required"/"none"/"optional" (not CERT_REQUIRED)
+ssl_q = "ssl_cert_reqs=required"
 urls = {
     "DATABASE_URL": f"postgresql+asyncpg://{user}:{password}@{host}:{db_port}/{dbname}",
     "REDIS_URL": f"rediss://:{token}@{rhost}:{rport}/0?{ssl_q}",
