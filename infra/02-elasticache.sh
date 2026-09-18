@@ -1,9 +1,4 @@
 # ElastiCache Redis for tradeflow
-#
-# Conventions for all infra/0N-*.sh:
-#   Tag Project=tradeflow, Step=NN at create time
-#   Idempotent: skip if resource exists by tag/name
-#   Append one line to infra/.deployed-steps on success
 
 set -euo pipefail
 

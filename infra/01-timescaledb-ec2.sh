@@ -1,9 +1,4 @@
 # Private TimescaleDB EC2 for tradeflow (Step 01). No ECS/ElastiCache.
-#
-# Conventions for all infra/-*.sh:
-#   Tag Project=tradeflow, Step=NN at create time
-#   Idempotent: skip if resource exists by tag/name
-#   Append one line to infra/.deployed-steps on success
 
 set -euo pipefail
 

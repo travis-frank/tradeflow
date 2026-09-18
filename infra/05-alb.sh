@@ -1,15 +1,5 @@
-#!/usr/bin/env bash
 # Application Load Balancer in front of ECS api only (Step 05). Requires 01 + 04.
-#
-# Conventions for all infra/0N-*.sh:
-#   Tag Project=tradeflow, Step=NN at create time
-#   Idempotent: skip if resource exists by tag/name
-#   Append one line to infra/.deployed-steps on success
-#
-# HTTP :80 now. HTTPS :443 later = create-listener with an ACM cert pointing at
-# the same target group (small add, not a rewrite) — TG ARN is in .deployed-steps.
-#
-# Usage: AWS_PROFILE=tfrank-deploy ./infra/05-alb.sh
+
 
 set -euo pipefail
 

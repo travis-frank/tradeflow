@@ -1,19 +1,4 @@
-#!/usr/bin/env bash
-# ECS Fargate: api, worker, beat (Step 04). Requires Steps 01–03.
-#
-# Conventions for all infra/0N-*.sh:
-#   Tag Project=tradeflow, Step=NN at create time
-#   Idempotent: skip if resource exists by tag/name
-#   Append one line to infra/.deployed-steps on success
-#
-# Before running, create the JWT signing secret manually (Settings.secret_key / SECRET_KEY):
-#   aws secretsmanager create-secret --name tradeflow/app/secret-key \
-#     --secret-string "$(openssl rand -hex 32)" --profile tfrank-deploy
-# OPENAI_API_KEY is intentionally omitted — research runs in deterministic mode until
-# frontend BYOK lands (per-request key, not a server-side secret).
-#
-# Usage: AWS_PROFILE=tfrank-deploy ./infra/04-ecs.sh
-
+# ECS Fargate: api, worker, beat 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
