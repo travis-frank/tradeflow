@@ -36,7 +36,9 @@ app: FastAPI = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+    "http://localhost:5173",
+    "http://tradeflow-450284742675-frontend.s3-website-us-east-1.amazonaws.com",],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

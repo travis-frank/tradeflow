@@ -19,3 +19,32 @@ celerybeat-schedule
 celerybeat.pid
 uv.lock
 benchmarks/results/
+
+# AWS deployment additions
+.env.production
+.env.local
+.env.*.local
+
+# SSH keys: shouldn't be created at all (SSM Session Manager only), but ignore in case one gets generated
+*.pem
+*.key
+
+# AWS credentials 
+.aws/
+aws-credentials*
+*credentials.json
+
+# Terraform (not used but ignore defensively in case anything touches it)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+terraform.tfplan
+
+# Infra script outputs/logs that may capture resource IDs, endpoints, or secret values printed during a run
+infra/*.log
+infra/output/
+infra/*.out
+infra/.deployed-steps
